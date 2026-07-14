@@ -1,0 +1,172 @@
+CÁCH LÀM DỰ ÁN
+
+1. Đọc yêu cầu và xác định đầu ra
+
+Mục tiêu cần đạt:
+- Hoàn thiện pipeline sales_data_quality_pipeline.
+- Đọc một file CSV đơn hàng từ starter_project/data/.
+- Validate customer_id, amount và status.
+- Tự động ghi starter_project/output/validation_summary.json.
+- Gửi thông báo Discord nếu có webhook.
+- Dừng pipeline khi validation_status là failed.
+
+Không tạo validation_summary.json thủ công vì rubric yêu cầu file này phải được sinh từ code.
+
+2. Kiểm tra dữ liệu đầu vào
+
+Hai file cần dùng:
+- starter_project/data/orders_passed.csv
+- starter_project/data/orders_failed.csv
+
+Schema cần xử lý:
+- order_id
+- customer_id
+- amount
+- status
+
+orders_passed.csv dùng để chứng minh pipeline thành công.
+orders_failed.csv dùng để chứng minh pipeline phát hiện lỗi, ghi summary và fail đúng cách.
+
+3. Hoàn thiện cấu hình trong starter_project/src/config.py
+
+File config.py nên chứa các cấu hình dùng chung:
+- PROJECT_ROOT trỏ tới thư mục starter_project.
+- DATA_DIR trỏ tới starter_project/data.
+- OUTPUT_DIR trỏ tới starter_project/output.
+- PASSED_DATASET trỏ tới orders_passed.csv.
+- FAILED_DATASET trỏ tới orders_failed.csv.
+- SUMMARY_FILE trỏ tới output/validation_summary.json.
+- VALID_STATUSES = {"completed", "pending", "cancelled"}.
+- DISCORD_WEBHOOK_URL lấy từ biến môi trường.
+- AIRFLOW_INPUT_FILE lấy từ biến môi trường, mặc định dùng orders_passed.csv.
+
+Cách này giúp code không hard-code đường dẫn rải rác ở nhiều file.
+
+4. Hoàn thiện logic trong starter_project/src/validation.py
+
+Nên tách logic thành các hàm nhỏ:
+
+- read_rows(csv_path):
+  Đọc CSV bằng csv.DictReader và trả về list dict.
+
+- is_positive_number(raw_amount):
+  Thử ép raw_amount sang float.
+  Trả về True nếu số lớn hơn 0.
+  Trả về False nếu rỗng, không phải số, bằng 0 hoặc âm.
+
+- build_summary(rows):
+  Duyệt toàn bộ rows.
+  Đếm missing_customer_ids nếu customer_id.strip() rỗng.
+  Đếm invalid_amounts nếu amount không phải số dương.
+  Đếm invalid_statuses nếu status không nằm trong VALID_STATUSES.
+  Tạo dict summary có đủ row_count, các counter lỗi và validation_status.
+
+- write_summary(summary, output_path):
+  Tạo thư mục output nếu cần.
+  Ghi summary ra JSON bằng UTF-8.
+
+- send_discord_message(summary, webhook_url):
+  Nếu webhook_url rỗng thì bỏ qua.
+  Nếu có webhook, gửi HTTP POST tới Discord với nội dung nêu trạng thái và các counter.
+
+- run_lab_check(input_path, output_path=None, allow_failure=False, skip_discord=False):
+  Gọi lần lượt read_rows, build_summary, write_summary, send_discord_message.
+  Nếu summary failed và allow_failure=False thì raise LabValidationError.
+  Trả về summary nếu không bị chặn bởi lỗi.
+
+5. Hoàn thiện DAG trong starter_project/dags/sales_data_quality_pipeline.py
+
+Trong hàm validate_orders_task, import cấu hình và hàm validation:
+
+from src.config import AIRFLOW_INPUT_FILE, SUMMARY_FILE
+from src.validation import run_lab_check
+
+Sau đó gọi:
+
+return run_lab_check(
+    input_path=AIRFLOW_INPUT_FILE,
+    output_path=SUMMARY_FILE,
+)
+
+Không bật allow_failure trong DAG, vì dataset lỗi phải làm task fail theo rubric.
+
+DAG cần giữ:
+- dag_id="sales_data_quality_pipeline"
+- schedule=None
+- catchup=False
+- PythonOperator có task_id="validate_orders"
+
+6. Cách chạy local để tự kiểm tra
+
+Bạn có thể chạy passed dataset:
+
+python starter_project/scripts/run_local_check.py starter_project/data/orders_passed.csv --skip-discord
+
+Kết quả mong đợi:
+- validation_status = passed
+- row_count = 10
+- missing_customer_ids = 0
+- invalid_amounts = 0
+- invalid_statuses = 0
+
+Bạn có thể chạy failed dataset:
+
+python starter_project/scripts/run_local_check.py starter_project/data/orders_failed.csv --allow-failure --skip-discord
+
+Kết quả mong đợi:
+- validation_status = failed
+- row_count = 10
+- missing_customer_ids = 2
+- invalid_amounts = 2
+- invalid_statuses = 2
+
+7. Cách kiểm tra output
+
+Sau mỗi lần chạy, kiểm tra file:
+
+starter_project/output/validation_summary.json
+
+So sánh với:
+- starter_project/expected/validation_summary_passed.json khi chạy orders_passed.csv.
+- starter_project/expected/validation_summary_failed.json khi chạy orders_failed.csv.
+
+Nếu số liệu lệch, kiểm tra lại ba rule validation:
+- customer_id đã strip chưa.
+- amount có xử lý 0, số âm và dữ liệu không phải số chưa.
+- status có so sánh đúng ba giá trị hợp lệ chưa.
+
+8. Cách cấu hình Discord
+
+Khi muốn gửi Discord thật, đặt biến môi trường DISCORD_WEBHOOK_URL bằng webhook URL hợp lệ.
+
+Khi chỉ kiểm tra local, dùng --skip-discord để tránh phụ thuộc mạng hoặc webhook.
+
+Alert nên có đủ thông tin:
+- trạng thái PASSED hoặc FAILED
+- số dòng đã kiểm tra
+- số lỗi customer_id
+- số lỗi amount
+- số lỗi status
+
+9. Cách chạy trong Airflow
+
+Đặt DAG file sales_data_quality_pipeline.py vào thư mục dags của Airflow hoặc dùng starter_project/dags nếu Airflow đang trỏ tới đó.
+
+Nếu muốn Airflow chạy dataset khác, đặt biến môi trường AIRFLOW_INPUT_FILE:
+- Với dataset hợp lệ: starter_project/data/orders_passed.csv
+- Với dataset lỗi: starter_project/data/orders_failed.csv
+
+Trigger DAG sales_data_quality_pipeline thủ công.
+
+10. Checklist trước khi nộp
+
+- DAG có tên đúng sales_data_quality_pipeline.
+- Airflow import được DAG không lỗi.
+- validate_orders_task gọi được run_lab_check.
+- Hai file CSV vẫn nằm trong starter_project/data/.
+- validation_summary.json được sinh tự động.
+- Passed dataset tạo summary passed.
+- Failed dataset tạo summary failed và làm pipeline fail.
+- Summary vẫn tồn tại sau khi failed.
+- Discord alert có nội dung rõ ràng hoặc được skip khi chạy local.
+- Không hard-code kết quả expected vào code.

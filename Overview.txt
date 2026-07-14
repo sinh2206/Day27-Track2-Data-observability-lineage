@@ -1,0 +1,89 @@
+TỔNG QUAN DỰ ÁN: SALES DATA QUALITY LAB
+
+1. Mục tiêu dự án
+
+Dự án này là một bài lab về data quality trong Apache Airflow. Người học cần xây dựng một pipeline kiểm tra chất lượng dữ liệu đơn hàng bán hàng từ file CSV, tự động sinh file JSON tổng hợp kết quả kiểm tra và gửi thông báo vận hành qua Discord webhook.
+
+Pipeline cần xử lý hai bộ dữ liệu:
+- starter_project/data/orders_passed.csv: dữ liệu hợp lệ, pipeline phải chạy thành công.
+- starter_project/data/orders_failed.csv: dữ liệu có lỗi chủ ý, pipeline phải ghi summary rồi dừng bằng lỗi.
+
+Điểm quan trọng: không được viết tay file validation_summary.json. File này phải được tạo tự động bởi logic validation hoặc DAG.
+
+2. Cấu trúc thư mục chính
+
+- README.md: mô tả tổng thể bài lab, yêu cầu đầu ra, quy tắc validation và cách chạy nhanh.
+- assignment/: tài liệu hướng dẫn cho người học.
+  - lab_brief.py: nêu mục tiêu, quy tắc validation và expected summary.
+  - implementation_steps.py: checklist các bước triển khai.
+  - pseudocode.py: mã giả gần với cách cài đặt thật.
+- grading/rubric.md: thang điểm chấm bài, tổng 10 điểm.
+- starter_project/: project mẫu để hoàn thiện.
+  - dags/sales_data_quality_pipeline.py: DAG Airflow cần hoàn thiện task validate_orders_task.
+  - src/config.py: cấu hình đường dẫn dữ liệu, output, status hợp lệ và webhook.
+  - src/validation.py: logic đọc CSV, kiểm tra dữ liệu, ghi JSON, gửi Discord và xử lý lỗi.
+  - data/: chứa hai file dữ liệu mẫu passed và failed.
+  - expected/: chứa JSON kết quả mong đợi để đối chiếu.
+  - scripts/run_local_check.py: script chạy kiểm tra local không cần Airflow.
+
+3. Quy tắc kiểm tra dữ liệu
+
+Mỗi dòng CSV có các cột chính: order_id, customer_id, amount, status.
+
+Pipeline phải kiểm tra:
+- customer_id không được rỗng hoặc chỉ gồm khoảng trắng.
+- amount phải là số và lớn hơn 0.
+- status chỉ được thuộc một trong ba giá trị: completed, pending, cancelled.
+
+4. Định dạng JSON đầu ra
+
+File starter_project/output/validation_summary.json cần có dạng:
+
+{
+  "row_count": 10,
+  "missing_customer_ids": 0,
+  "invalid_amounts": 0,
+  "invalid_statuses": 0,
+  "validation_status": "passed"
+}
+
+Ý nghĩa các trường:
+- row_count: tổng số dòng dữ liệu đã đọc.
+- missing_customer_ids: số dòng thiếu customer_id.
+- invalid_amounts: số dòng có amount không hợp lệ.
+- invalid_statuses: số dòng có status không hợp lệ.
+- validation_status: passed nếu không có lỗi, failed nếu có ít nhất một lỗi.
+
+5. Hành vi mong đợi
+
+Với orders_passed.csv:
+- Đọc đủ 10 dòng.
+- Tất cả bộ đếm lỗi bằng 0.
+- validation_status là passed.
+- Pipeline chạy thành công.
+- Gửi thông báo Discord thành công nếu có webhook hợp lệ.
+
+Với orders_failed.csv:
+- Đọc đủ 10 dòng.
+- Kết quả mong đợi:
+  - missing_customer_ids = 2
+  - invalid_amounts = 2
+  - invalid_statuses = 2
+  - validation_status = failed
+- Pipeline vẫn phải ghi validation_summary.json.
+- Sau khi ghi summary và gửi cảnh báo lỗi, pipeline phải raise exception để dừng.
+
+6. Tiêu chí chấm điểm chính
+
+Tổng điểm: 10.
+
+- 2 điểm: DAG hợp lệ, đúng tên sales_data_quality_pipeline và có thể trigger.
+- 2 điểm: đọc CSV đúng, xử lý đủ các cột order_id, customer_id, amount, status.
+- 3 điểm: cài đặt đúng ba rule validation.
+- 1 điểm: tự động sinh validation_summary.json đúng cấu trúc và đúng số liệu.
+- 1 điểm: gửi alert Discord rõ trạng thái success hoặc failure.
+- 1 điểm: xử lý failure đúng, tức là dataset lỗi làm pipeline fail nhưng vẫn giữ lại summary.
+
+7. Kết luận
+
+Đây là bài tập nhỏ nhưng bao quát đủ một luồng data observability cơ bản: ingest dữ liệu, kiểm tra chất lượng, ghi metric/summary, cảnh báo vận hành và fail pipeline khi dữ liệu không đạt yêu cầu.

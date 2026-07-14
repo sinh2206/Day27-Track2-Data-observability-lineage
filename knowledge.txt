@@ -1,0 +1,93 @@
+KIẾN THỨC CẦN CÓ CHO BÀI TẬP
+
+1. Python cơ bản
+
+Cần nắm:
+- Cách tổ chức module Python theo thư mục src/.
+- Import module nội bộ, ví dụ from src.validation import run_lab_check.
+- Hàm, tham số mặc định, kiểu dữ liệu dict/list/string.
+- Exception và raise để làm pipeline fail khi validation không đạt.
+- Làm việc với biến môi trường qua os.getenv.
+
+2. Làm việc với file và đường dẫn
+
+Cần biết:
+- pathlib.Path để tạo đường dẫn độc lập với hệ điều hành.
+- Tạo thư mục output nếu chưa tồn tại bằng mkdir(parents=True, exist_ok=True).
+- Đọc file bằng encoding="utf-8".
+- Ghi file JSON ra starter_project/output/validation_summary.json.
+
+3. Đọc CSV
+
+Bài này dùng csv.DictReader để đọc từng dòng thành dict.
+
+Cần hiểu:
+- Header CSV trở thành key trong dict.
+- Các cột cần đọc là order_id, customer_id, amount, status.
+- Giá trị rỗng hoặc chỉ có khoảng trắng cần được strip trước khi kiểm tra.
+
+4. Kiểm tra chất lượng dữ liệu
+
+Ba rule bắt buộc:
+- customer_id: sau khi strip không được rỗng.
+- amount: chuyển được sang float và phải lớn hơn 0.
+- status: phải nằm trong tập {"completed", "pending", "cancelled"}.
+
+Cần biết cách đếm lỗi theo từng loại, không chỉ dừng ở dòng lỗi đầu tiên. Summary phải phản ánh tổng số lỗi trong toàn bộ file.
+
+5. JSON summary
+
+Cần biết:
+- Dùng json.dumps hoặc json.dump để ghi dict thành JSON.
+- JSON phải có đủ các field rubric yêu cầu:
+  - row_count
+  - missing_customer_ids
+  - invalid_amounts
+  - invalid_statuses
+  - validation_status
+- validation_status là failed nếu bất kỳ bộ đếm lỗi nào lớn hơn 0.
+
+6. Apache Airflow cơ bản
+
+Cần nắm:
+- DAG là định nghĩa workflow trong Airflow.
+- dag_id phải là sales_data_quality_pipeline.
+- PythonOperator dùng để chạy một hàm Python trong task.
+- schedule=None nghĩa là DAG chạy thủ công.
+- catchup=False để Airflow không chạy bù các lịch cũ.
+- Task validation phải raise exception khi dữ liệu lỗi để DAG được đánh dấu fail.
+
+7. Discord webhook
+
+Cần hiểu:
+- Webhook URL nên lấy từ biến môi trường DISCORD_WEBHOOK_URL.
+- Nếu webhook rỗng, có thể bỏ qua gửi Discord khi chạy local.
+- Nội dung alert cần nêu rõ trạng thái passed/failed và các chỉ số lỗi.
+- Khi dùng webhook thật, request HTTP POST cần gửi payload JSON có trường content.
+
+8. Kiểm tra local
+
+Script starter_project/scripts/run_local_check.py giúp kiểm tra logic không cần Airflow.
+
+Cần biết ý nghĩa các tham số:
+- input_file: file CSV cần validate.
+- --output: nơi ghi validation_summary.json.
+- --allow-failure: cho phép dataset lỗi trả về exit code thành công khi muốn quan sát summary.
+- --skip-discord: bỏ qua gửi Discord khi chưa có webhook.
+
+9. Đối chiếu expected output
+
+Sau khi chạy, so sánh file output với:
+- starter_project/expected/validation_summary_passed.json
+- starter_project/expected/validation_summary_failed.json
+
+Dataset passed phải có tất cả counter lỗi bằng 0.
+Dataset failed phải có missing_customer_ids = 2, invalid_amounts = 2, invalid_statuses = 2.
+
+10. Tư duy cần có
+
+Bài này không chỉ kiểm tra code chạy được, mà còn kiểm tra tư duy data observability:
+- Luôn tạo bằng chứng kiểm tra dưới dạng summary.
+- Pipeline phải báo lỗi rõ ràng khi dữ liệu xấu.
+- Alert vận hành phải đủ thông tin để người nhận biết vấn đề.
+- Không hard-code kết quả; summary phải được tính từ dữ liệu đầu vào.

@@ -30,9 +30,9 @@ def build_summary(rows: list[dict[str, str]]) -> dict[str, int | str]:
     invalid_statuses = 0
 
     for row in rows:
-        customer_id = row.get("customer_id", "").strip()
-        amount = row.get("amount", "").strip()
-        status = row.get("status", "").strip()
+        customer_id = (row.get("customer_id") or "").strip()
+        amount = (row.get("amount") or "").strip()
+        status = (row.get("status") or "").strip()
 
         if not customer_id:
             missing_customer_ids += 1
